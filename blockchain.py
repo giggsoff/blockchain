@@ -1,5 +1,6 @@
 import hashlib
 import json
+import shelve
 from time import time
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -18,9 +19,30 @@ class Blockchain:
         # Create the genesis block
         self.new_block(previous_hash='1', proof=100)
 
+
     def init_kw(self, kwip, kwport):
         self.kwip=kwip
         self.kwport=kwport
+
+    def save_db(self):
+        db = shelve.open(self.db)
+        db['chain'] = json.dumps(self.chain)
+        db.close()
+        
+
+    def init_db(self, dbfile):
+        self.db = dbfile
+        db = shelve.open(self.db)
+        try:
+            if db['chain']:
+                self.chain=json.loads(db['chain'])
+                if len(self.chain)>0:
+                    self.block=self.chain[len(self.chain)-1]
+                    self.transactions = self.chain[len(self.chain)-1]['transactions']
+        except:
+            db.close()
+            self.save_db()
+
     def getlastkey(self):
         try:
             response = requests.post(f'http://{self.kwip}:{self.kwport}',data="last")
@@ -35,6 +57,7 @@ class Blockchain:
             'sha':hash256
         }
         return key
+
     def getkeybysha(self,sha):
         try:
             response = requests.post(f'http://{self.kwip}:{self.kwport}',data=f'key{sha}')
@@ -46,6 +69,7 @@ class Blockchain:
             'sha':sha
         }
         return key
+
     def register_node(self, address):
         """
         Add a new node to the list of nodes
@@ -267,6 +291,9 @@ def mine():
 
     # Forge the new Block by adding it to the chain
     previous_hash = blockchain.hash(last_block)
+    
+    blockchain.save_db()
+    
     block = blockchain.new_block(proof, previous_hash)
 
     response = {
@@ -328,6 +355,7 @@ def consensus():
     replaced = blockchain.resolve_conflicts()
 
     if replaced:
+        blockchain.save_db()
         response = {
             'message': 'Our chain was replaced',
             'new_chain': blockchain.chain
@@ -348,11 +376,14 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--port', default=5000, type=int, help='port to listen on')
     parser.add_argument('-k', '--kwport', default=55554, type=int, help='port keyworker to listen on')
     parser.add_argument('-i', '--ip', default='127.0.0.1', help='ip keyworker to listen on')
+    parser.add_argument('-d', '--db', default='db.db', help='db file')
     args = parser.parse_args()
     port = args.port
     kwport = args.kwport
     kwip = args.ip
+    dbfile = args.db
     blockchain.init_kw(kwip,kwport)
+    blockchain.init_db(dbfile)
     #key = blockchain.getlastkey()
     #print(key)
     #key = blockchain.getkeybysha(key['sha'])
