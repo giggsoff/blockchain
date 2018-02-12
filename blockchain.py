@@ -13,10 +13,39 @@ class Blockchain:
         self.current_transactions = []
         self.chain = []
         self.nodes = set()
-
+        self.kwip = "127.0.0.1"
+        self.kwport = 55554
         # Create the genesis block
         self.new_block(previous_hash='1', proof=100)
 
+    def init_kw(self, kwip, kwport):
+        self.kwip=kwip
+        self.kwport=kwport
+    def getlastkey(self):
+        try:
+            response = requests.post(f'http://{self.kwip}:{self.kwport}',data="last")
+            response.raise_for_status()
+        except:
+            return 0
+        block_string = response.text
+        block_string = bytearray.fromhex(response.text)
+        hash256 = hashlib.sha256(block_string).hexdigest().upper()
+        key = {
+            'key':response.text,
+            'sha':hash256
+        }
+        return key
+    def getkeybysha(self,sha):
+        try:
+            response = requests.post(f'http://{self.kwip}:{self.kwport}',data=f'key{sha}')
+            response.raise_for_status()
+        except:
+            return 0
+        key = {
+            'key':response.text,
+            'sha':sha
+        }
+        return key
     def register_node(self, address):
         """
         Add a new node to the list of nodes
@@ -53,11 +82,15 @@ class Blockchain:
             # Check that the hash of the block is correct
             if block['previous_hash'] != self.hash(last_block):
                 return False
-
-            # Check that the Proof of Work is correct
-            if not self.valid_proof(last_block['proof'], block['proof'], last_block['previous_hash']):
+            lastkey = self.getkeybysha(last_block['q_hash'])
+            if lastkey==0:
+                print("BY SHA ERROR")
                 return False
-
+            # Check that the Proof of Work is correct
+            if not self.valid_quantum(last_block['proof'], block['proof'], block['previous_hash'], lastkey['key']):
+                print("ERROR IN QUATNUM")
+                return False
+                
             last_block = block
             current_index += 1
 
@@ -112,6 +145,7 @@ class Blockchain:
             'transactions': self.current_transactions,
             'proof': proof,
             'previous_hash': previous_hash or self.hash(self.chain[-1]),
+            'q_hash':self.getlastkey()['sha']
         }
 
         # Reset the current list of transactions
@@ -166,11 +200,13 @@ class Blockchain:
 
         last_proof = last_block['proof']
         last_hash = self.hash(last_block)
-
+        lastkey = self.getkeybysha(last_block['q_hash'])
+        if lastkey==0:
+            print("error in get key for proof of work")
+            return 0
         proof = 0
-        while self.valid_proof(last_proof, proof, last_hash) is False:
+        while self.valid_quantum(last_proof, proof, last_hash, lastkey['key']) is False:
             proof += 1
-
         return proof
 
     @staticmethod
@@ -189,6 +225,22 @@ class Blockchain:
         guess_hash = hashlib.sha256(guess).hexdigest()
         return guess_hash[:4] == "0000"
 
+    @staticmethod
+    def valid_quantum(last_proof, proof, last_hash, qkey):
+        """
+        Validates the Proof
+
+        :param last_proof: <int> Previous Proof
+        :param proof: <int> Current Proof
+        :param last_hash: <str> The hash of the Previous Block
+        :return: <bool> True if correct, False if not.
+
+        """
+
+        guess = f'{last_proof}{proof}{last_hash}{qkey}'.encode()
+        guess_hash = hashlib.sha256(guess).hexdigest()
+        return guess_hash[:4] == "0000"
+
 
 # Instantiate the Node
 app = Flask(__name__)
@@ -198,7 +250,6 @@ node_identifier = str(uuid4()).replace('-', '')
 
 # Instantiate the Blockchain
 blockchain = Blockchain()
-
 
 @app.route('/mine', methods=['GET'])
 def mine():
@@ -224,6 +275,7 @@ def mine():
         'transactions': block['transactions'],
         'proof': block['proof'],
         'previous_hash': block['previous_hash'],
+        'q_hash': block['q_hash']
     }
     return jsonify(response), 200
 
@@ -294,7 +346,15 @@ if __name__ == '__main__':
 
     parser = ArgumentParser()
     parser.add_argument('-p', '--port', default=5000, type=int, help='port to listen on')
+    parser.add_argument('-k', '--kwport', default=55554, type=int, help='port keyworker to listen on')
+    parser.add_argument('-i', '--ip', default='127.0.0.1', help='ip keyworker to listen on')
     args = parser.parse_args()
     port = args.port
-
+    kwport = args.kwport
+    kwip = args.ip
+    blockchain.init_kw(kwip,kwport)
+    #key = blockchain.getlastkey()
+    #print(key)
+    #key = blockchain.getkeybysha(key['sha'])
+    #print(key)
     app.run(host='0.0.0.0', port=port)
