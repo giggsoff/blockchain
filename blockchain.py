@@ -19,33 +19,31 @@ class Blockchain:
         # Create the genesis block
         self.new_block(previous_hash='1', proof=100)
 
-
     def init_kw(self, kwip, kwport):
-        self.kwip=kwip
-        self.kwport=kwport
+        self.kwip = kwip
+        self.kwport = kwport
 
     def save_db(self):
         db = shelve.open(self.db)
         db['chain'] = json.dumps(self.chain)
         db.close()
-        
 
     def init_db(self, dbfile):
         self.db = dbfile
         db = shelve.open(self.db)
         try:
             if db['chain']:
-                self.chain=json.loads(db['chain'])
-                if len(self.chain)>0:
-                    self.block=self.chain[len(self.chain)-1]
-                    self.transactions = self.chain[len(self.chain)-1]['transactions']
+                self.chain = json.loads(db['chain'])
+                if len(self.chain) > 0:
+                    self.block = self.chain[len(self.chain) - 1]
+                    self.transactions = self.chain[len(self.chain) - 1]['transactions']
         except:
             db.close()
             self.save_db()
 
     def getlastkey(self):
         try:
-            response = requests.post(f'http://{self.kwip}:{self.kwport}',data="last")
+            response = requests.post(f'http://{self.kwip}:{self.kwport}', data="last")
             response.raise_for_status()
         except:
             return 0
@@ -53,20 +51,20 @@ class Blockchain:
         block_string = bytearray.fromhex(response.text)
         hash256 = hashlib.sha256(block_string).hexdigest().upper()
         key = {
-            'key':response.text,
-            'sha':hash256
+            'key': response.text,
+            'sha': hash256
         }
         return key
 
-    def getkeybysha(self,sha):
+    def getkeybysha(self, sha):
         try:
-            response = requests.post(f'http://{self.kwip}:{self.kwport}',data=f'key{sha}')
+            response = requests.post(f'http://{self.kwip}:{self.kwport}', data=f'key{sha}')
             response.raise_for_status()
         except:
             return 0
         key = {
-            'key':response.text,
-            'sha':sha
+            'key': response.text,
+            'sha': sha
         }
         return key
 
@@ -86,8 +84,7 @@ class Blockchain:
         else:
             raise ValueError('Invalid URL')
 
-
-    def valid_chain(self, chain):
+    def valid_chain(self, chain,quantum_hash,quantum_proof):
         """
         Determine if a given blockchain is valid
 
@@ -106,19 +103,25 @@ class Blockchain:
             # Check that the hash of the block is correct
             if block['previous_hash'] != self.hash(last_block):
                 return False
-            lastkey = self.getkeybysha(last_block['q_hash'])
-            if lastkey==0:
-                print("BY SHA ERROR")
-                return False
+            #lastkey = self.getkeybysha(last_block['q_hash'])
+            #if lastkey == 0:
+            #    print("BY SHA ERROR")
+            #    return False
             # Check that the Proof of Work is correct
-            if not self.valid_quantum(last_block['proof'], block['proof'], block['previous_hash'], lastkey['key']):
-                print("ERROR IN QUATNUM")
+            if not self.valid_quantum(last_block['proof'], block['proof'], block['previous_hash']):
+                print("error in consistency")
                 return False
-                
+
             last_block = block
             current_index += 1
 
-        return True
+        quantum_key = blockchain.getkeybysha(quantum_hash)
+        if quantum_key == 0:
+            print("NO SUCH KEY")
+            return False
+        guess = f'{chain[-1]["proof"]}{quantum_key["key"]}'.encode()
+        guess_proof = hashlib.sha256(guess).hexdigest()
+        return guess_proof == quantum_proof
 
     def resolve_conflicts(self):
         """
@@ -141,9 +144,11 @@ class Blockchain:
             if response.status_code == 200:
                 length = response.json()['length']
                 chain = response.json()['chain']
+                quantum_hash = response.json()['quantum_hash']
+                quantum_proof = response.json()['quantum_proof']
 
                 # Check if the length is longer and the chain is valid
-                if length > max_length and self.valid_chain(chain):
+                if length > max_length and self.valid_chain(chain,quantum_hash,quantum_proof):
                     max_length = length
                     new_chain = chain
 
@@ -168,8 +173,7 @@ class Blockchain:
             'timestamp': time(),
             'transactions': self.current_transactions,
             'proof': proof,
-            'previous_hash': previous_hash or self.hash(self.chain[-1]),
-            'q_hash':self.getlastkey()['sha']
+            'previous_hash': previous_hash or self.hash(self.chain[-1])
         }
 
         # Reset the current list of transactions
@@ -211,30 +215,25 @@ class Blockchain:
         block_string = json.dumps(block, sort_keys=True).encode()
         return hashlib.sha256(block_string).hexdigest()
 
-    def proof_of_work(self, last_block):
+    def proof_of_nothing(self, last_block):
         """
         Simple Proof of Work Algorithm:
 
          - Find a number p' such that hash(pp') contains leading 4 zeroes
          - Where p is the previous proof, and p' is the new proof
-         
+
         :param last_block: <dict> last Block
         :return: <int>
         """
 
         last_proof = last_block['proof']
         last_hash = self.hash(last_block)
-        lastkey = self.getkeybysha(last_block['q_hash'])
-        if lastkey==0:
-            print("error in get key for proof of work")
-            return 0
-        proof = 0
-        while self.valid_quantum(last_proof, proof, last_hash, lastkey['key']) is False:
-            proof += 1
+        raw_proof = f'{last_proof}{last_hash}'.encode()
+        proof = hashlib.sha256(raw_proof).hexdigest()
         return proof
 
     @staticmethod
-    def valid_proof(last_proof, proof, last_hash):
+    def valid_quantum(last_proof, proof, last_hash):
         """
         Validates the Proof
 
@@ -245,25 +244,9 @@ class Blockchain:
 
         """
 
-        guess = f'{last_proof}{proof}{last_hash}'.encode()
+        guess = f'{last_proof}{last_hash}'.encode()
         guess_hash = hashlib.sha256(guess).hexdigest()
-        return guess_hash[:4] == "0000"
-
-    @staticmethod
-    def valid_quantum(last_proof, proof, last_hash, qkey):
-        """
-        Validates the Proof
-
-        :param last_proof: <int> Previous Proof
-        :param proof: <int> Current Proof
-        :param last_hash: <str> The hash of the Previous Block
-        :return: <bool> True if correct, False if not.
-
-        """
-
-        guess = f'{last_proof}{proof}{last_hash}{qkey}'.encode()
-        guess_hash = hashlib.sha256(guess).hexdigest()
-        return guess_hash[:4] == "0000"
+        return guess_hash == proof
 
 
 # Instantiate the Node
@@ -275,11 +258,12 @@ node_identifier = str(uuid4()).replace('-', '')
 # Instantiate the Blockchain
 blockchain = Blockchain()
 
+
 @app.route('/mine', methods=['GET'])
 def mine():
     # We run the proof of work algorithm to get the next proof...
     last_block = blockchain.last_block
-    proof = blockchain.proof_of_work(last_block)
+    proof = blockchain.proof_of_nothing(last_block)
 
     # We must receive a reward for finding the proof.
     # The sender is "0" to signify that this node has mined a new coin.
@@ -291,9 +275,9 @@ def mine():
 
     # Forge the new Block by adding it to the chain
     previous_hash = blockchain.hash(last_block)
-    
+
     blockchain.save_db()
-    
+
     block = blockchain.new_block(proof, previous_hash)
 
     response = {
@@ -301,8 +285,7 @@ def mine():
         'index': block['index'],
         'transactions': block['transactions'],
         'proof': block['proof'],
-        'previous_hash': block['previous_hash'],
-        'q_hash': block['q_hash']
+        'previous_hash': block['previous_hash']
     }
     return jsonify(response), 200
 
@@ -325,9 +308,15 @@ def new_transaction():
 
 @app.route('/chain', methods=['GET'])
 def full_chain():
+    quantum_key=blockchain.getlastkey()
+    guess = f'{blockchain.chain[-1]["proof"]}{quantum_key["key"]}'.encode()
+    guess_proof = hashlib.sha256(guess).hexdigest()
     response = {
         'chain': blockchain.chain,
         'length': len(blockchain.chain),
+        'quantum_hash': quantum_key['sha'],
+        'quantum_proof': guess_proof
+
     }
     return jsonify(response), 200
 
@@ -382,10 +371,10 @@ if __name__ == '__main__':
     kwport = args.kwport
     kwip = args.ip
     dbfile = args.db
-    blockchain.init_kw(kwip,kwport)
+    blockchain.init_kw(kwip, kwport)
     blockchain.init_db(dbfile)
-    #key = blockchain.getlastkey()
-    #print(key)
-    #key = blockchain.getkeybysha(key['sha'])
-    #print(key)
+    # key = blockchain.getlastkey()
+    # print(key)
+    # key = blockchain.getkeybysha(key['sha'])
+    # print(key)
     app.run(host='0.0.0.0', port=port)
