@@ -12,6 +12,7 @@ class BaseBlockChain:
         self.current_transactions = []
         self.chain = []
         self.nodes = set()
+        self.db = 0
 
         # Create the genesis block
         self.new_block(previous_hash='1', proof=100)
