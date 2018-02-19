@@ -45,14 +45,16 @@ class QuantumBlockChain(BaseBlockChain):
         }
         return key
 
-    def valid_chain(self, chain,quantum_hash,quantum_proof):
+    def valid_chain(self, chain):
         """
         Determine if a given blockchain is valid
 
         :param chain: A blockchain
         :return: True if valid, False if not
         """
-
+        quantum_proof = chain["quantum_proof"]
+        quantum_hash = chain["quantum_hash"]
+        chain = chain["chain"]
         last_block = chain[0]
         current_index = 1
 
@@ -65,7 +67,7 @@ class QuantumBlockChain(BaseBlockChain):
             if block['previous_hash'] != self.hash(last_block):
                 return False
             # Check that the Proof of Work is correct
-            if not self.valid_quantum(last_block['proof'], block['proof'], block['previous_hash']):
+            if not self.valid_block(last_block['proof'], block['proof'], block['previous_hash']):
                 print("error in consistency")
                 return False
 
@@ -79,7 +81,6 @@ class QuantumBlockChain(BaseBlockChain):
         guess = f'{chain[-1]["proof"]}{quantum_key["key"]}'.encode()
         guess_proof = hashlib.sha256(guess).hexdigest()
         return guess_proof == quantum_proof
-
 
     def proof_of(self, last_block):
         """

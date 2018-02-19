@@ -13,7 +13,7 @@ class SimpleBlockChain(BaseBlockChain):
         :param chain: A blockchain
         :return: True if valid, False if not
         """
-
+        chain = chain["chain"]
         last_block = chain[0]
         current_index = 1
 
