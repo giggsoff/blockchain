@@ -79,7 +79,7 @@ class BaseBlockChain:
                 # Check if the length is longer and the chain is valid
                 if length > max_length and self.valid_chain(chain):
                     max_length = length
-                    new_chain = chain
+                    new_chain = chain["chain"]
 
         # Replace our chain if we discovered a new, valid chain longer than ours
         if new_chain:
