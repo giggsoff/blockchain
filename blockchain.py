@@ -125,5 +125,6 @@ if __name__ == '__main__':
         blockchain = QuantumBlockChain(kwip, kwport)
     else:
         blockchain = SimpleBlockChain()
-    blockchain.init_db(dbfile)
+    if args.db:
+        blockchain.init_db(dbfile)
     app.run(host='0.0.0.0', port=port)
